@@ -1,0 +1,68 @@
+# Public suffix list used by SelfGuard.
+#
+# A domain rule is rejected if it is itself a public suffix (for example
+# "it.com" or "co.uk"), because blocking those would take down every other
+# site under them.
+#
+# The values below are ADDED to the built-in list. One suffix per line.
+# Lines starting with "#" are comments.
+
+it.com
+pornhub.co.uk
+freebox.fr
+orange.fr
+wanadoo.fr
+laposte.net
+sfr.fr
+bbox.fr
+numericable.fr
+club-internet.fr
+aliceadsl.fr
+free.fr
+tele2.se
+telia.se
+com.se
+dns.se
+press.se
+tm.se
+pp.se
+zone.se
+yahoo.co.jp
+softbank.ne.jp
+ocn.ne.jp
+nifty.com
+biglobe.ne.jp
+au.com
+nifty.jp
+rakuten.co.jp
+sakura.ne.jp
+ocn.ne.jp
+ezweb.ne.jp
+so-net.ne.jp
+livedoor.com
+hatena.ne.jp
+fc2.com
+2ch.net
+5ch.net
+open2ch.net
+hey.com
+mail.ru
+yandex.ru
+rambler.ru
+list.ru
+bk.ru
+inbox.ru
+mail.ru
+QQ.com
+qq.com
+163.com
+126.com
+sina.com.cn
+sohu.com
+ifeng.com
+tmall.com
+taobao.com
+jd.com
+aliyun.com
+baidu.com
+mec.baidu.com

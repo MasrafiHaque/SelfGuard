@@ -42,6 +42,16 @@ android {
         compose = true
     }
 
+    lint {
+        // SelfGuard is sideloaded and never published on Google Play, so the
+        // Play target-SDK requirement does not apply. targetSdk 30 is
+        // deliberate: it keeps Android 11-era runtime behaviour.
+        disable += "ExpiredTargetSdkVersion"
+        // False positive: mipmap-anydpi-v26 is required for <adaptive-icon>
+        // because AAPT2 validates the folder qualifier, not minSdk.
+        disable += "ObsoleteSdkInt"
+    }
+
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"

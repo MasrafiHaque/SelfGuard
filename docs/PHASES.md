@@ -11,18 +11,19 @@
 | Phase | Theme | Produces | ⏱ | Depends on |
 |---|---|---|---|---|
 | 0 | Skeleton & tooling | Building project, empty shell app | ✅ done | — |
-| 1 | Foundation | Data layer, state, theme, navigation, tests | 1 day | 0 |
-| 2 | Onboarding & permissions | A guided setup that ends in a working, armed app | 1 day | 1 |
-| 3 | Website blocking | Blocked sites never open | 1.5 days | 1, 2 |
-| 4 | App blocking | Blocked apps never open | 1.5 days | 1, 2 |
-| 5 | Blocklist management | Editable apps/sites/keywords + import/export | 1.5 days | 1, 3, 4 |
-| 6 | Protection hardening | Hard to disable, safe way out | 2 days | 1, 2, 4 |
-| 7 | Statistics & streaks | Visible progress | 1 day | 1, 5 |
-| 8 | Panic button | A way to ride out the urge | 1 day | 1, 7 |
-| 9 | Hardening & release | Battery, Samsung quirks, signed APK | 1 day | 3–8 |
-| 10 | Acceptance & docs | Verified on the Galaxy A20 | 1 day | 9 |
+| 1 | Blocking foundation | Data layer, matching engine, onboarding, website blocking, editable lists | ✅ done | 0 |
+| 2 | App blocking | Blocked apps never open | 1.5 days | 1 |
+| 3 | Blocklist management | Apps tab, import/export, categories | 1.5 days | 1, 2 |
+| 4 | Protection hardening | Hard to disable, safe way out | 2 days | 1, 2 |
+| 5 | Statistics & streaks | Visible progress | 1 day | 1, 3 |
+| 6 | Panic button | A way to ride out the urge | 1 day | 1, 5 |
+| 7 | Hardening & release | Battery, Samsung quirks, signed APK | 1 day | 2–6 |
+| 8 | Acceptance & docs | Verified on the Galaxy A20 | 1 day | 7 |
 
-Total ≈ 12–13 days of focused work.
+Total ≈ 10–11 days of focused work.
+
+Phase 1 was originally planned as three phases (foundation / onboarding / website blocking).
+They were delivered together because the blocking engine needs all three to be demonstrable.
 
 ---
 
@@ -60,96 +61,69 @@ Total ≈ 12–13 days of focused work.
 
 ---
 
-## Phase 1 — Foundation
+## Phase 1 — Blocking foundation (data, onboarding, website blocking) ✅
 
-**Goal:** the app has real data, real state, and a navigable UI shell.
+**Goal:** the phone blocks adult websites and keywords in the browser, and a first run ends with
+the protection service actually enabled.
 
-**Deliverables:** Room schema v1 + DAOs, DataStore settings store, repositories, `AppContainer`,
-theme, navigation graph, domain models, pure matching engine skeleton, JVM test setup.
+**Deliverables:** Room schema v1 + DAOs, DataStore settings, `BlocklistRepository`, `AppContainer`,
+Material 3 theme, pure matching engine (`HostNormalizer` / `PublicSuffix` / `RuleMatcher`),
+`BrowserProfiles` + `BrowserProbe`, the accessibility blocking service, `BlockedActivity`,
+`DashboardScreen`, `BlocklistsScreen` (Websites / Keywords), `OnboardingScreen`, the bundled
+starter list, and the JVM test suite.
 
 **Checklist**
-- [ ] `AppContainer` created in `SelfGuardApp`, exposing repositories to the UI and the services
-- [ ] Room: `SelfGuardDatabase` + `BlockedAppEntity`, `BlockedSiteEntity`, `BlockedKeywordEntity`,
-      `EventEntity`, `DailyStatEntity` + DAOs; `exportSchema = true`, schemas committed
-- [ ] Room migrations folder ready (migration test harness in place)
-- [ ] `SettingsStore` (DataStore Preferences) with every key from ARCHITECTURE §5.2
-- [ ] `BlocklistRepository`, `EventRepository`, `StatsRepository`, `ProtectionRepository`
-- [ ] `RuleSnapshot` published as an immutable `StateFlow`; rebuilt on every list change (≤ 1 s)
-- [ ] `Clock` abstraction (timezone-aware `LocalDate` handling) + `AppDispatchers`
-- [ ] `HostNormalizer`, `PublicSuffix` (asset + fallback list), `RuleMatcher` — pure Kotlin
-- [ ] Material 3 theme (light/dark), colour scheme, typography
-- [ ] Compose navigation: Dashboard / Blocklists / Statistics / Settings (placeholder content)
-- [ ] Repositories exposed to the UI through `ViewModel`s with `collectAsStateWithLifecycle`
-- [ ] `Logging` with redaction of passphrase-like values
-- [ ] Unit tests: normaliser, public suffix, matcher, streak calculator (placeholder), protection state machine (placeholder)
-- [ ] `./gradlew :app:test` runs green
+- [x] `AppContainer` created in `SelfGuardApp`: database, settings store, matcher, repository
+- [x] Room v1: `blocked_sites` + `blocked_keywords` + DAOs; `exportSchema = true`, schema JSON committed
+- [x] `SettingsStore` (DataStore): `blocking_enabled`, `match_keywords_in_page_text`,
+      `onboarding_complete`, `defaults_seeded`
+- [x] `BlocklistRepository`: seed from assets, add / delete / enable, transactional restore of defaults
+- [x] `HostNormalizer`, `PublicSuffix` (built-in list + `assets/public_suffixes.txt`), `RuleMatcher`
+      — pure Kotlin, no Android imports under `domain/`
+- [x] Public-suffix rules rejected at entry (blocking `it.com` or `co.uk` is refused)
+- [x] Material 3 theme (light/dark)
+- [x] Onboarding: opens the Accessibility settings page, live service-status check;
+      "Start using SelfGuard" stays disabled until the service is confirmed running
+- [x] Dashboard: protection status, rule counts, master switch, page-text toggle, restore defaults
+- [x] Blocklists screen: Websites / Keywords tabs, add with validation, delete, subdomain note
+- [x] `BrowserProfiles`: address-bar resource-id candidates for Chrome, Samsung Internet,
+      Firefox and the AOSP browser
+- [x] `BrowserProbe`: bounded tree walk (node / depth / text caps, no polling), address-bar first,
+      top-of-screen fallback
+- [x] `SelfGuardAccessibilityService`: event-driven only; 1200 ms content-changed throttle,
+      750 ms block debounce; rules reloaded from Room on every change
+- [x] Block action: launch `BlockedActivity` first, confirm the top window, fall back to
+      `GLOBAL_ACTION_HOME` if the device refuses the background start
+- [x] `BlockedActivity`: matched rule text, `FLAG_SECURE`, show-when-locked, back goes Home
+- [x] Starter list in `assets/default_blocklist.txt` (editable; section-aware parser; 67 domains,
+      39 keywords)
+- [x] Unit tests: normaliser (3), public suffix (2), matcher (7), asset parser (4) — 16 green
+- [x] `./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug` green
 
-**Verification:** `./gradlew :app:test :app:assembleDebug`; the app opens, navigates between four
-tabs, and survives a process death with settings intact.
+**Deferred to later phases**
+- Blocked-site event rows and statistics → Phase 5
+- Apps tab, import / export, categories and notes → Phase 3
+- Diagnostic node-tree screen for browser breakage → Phase 3
+- Samsung Internet and Firefox verification on the Galaxy A20 → Phase 8
 
-**Exit criteria:** the data layer is complete and covered by JVM tests; no Android logic in `domain/`.
+**Verification:** build + lint + unit tests green, and a device walkthrough on Android 14 during
+development: onboarding blocks until the service is on → seeded list (67 / 39) → keyword rule
+redirects Chrome and shows the block screen → domain rule added through the UI redirects Chrome →
+unblocked host still loads → block-screen home button works → restore defaults drops the user rule
+and the host loads again.
+
+**Device finding (kept for later phases):** on Android 14 an activity started from the background
+into a task marked `excludeFromRecents` + `noHistory` is destroyed about 250 ms after creation
+(`finish-imm:recent-task-trimmed`). SelfGuard therefore launches the block screen **first** and
+only falls back to Home when the block screen did not take over, and the manifest no longer uses
+those two flags on `BlockedActivity`.
+
+**Exit criteria:** blocked hosts and keywords never stay open in Chrome; the list is editable in
+the app and the bundled asset; the service survives a process restart (re-armed by the system).
 
 ---
 
-## Phase 2 — Onboarding and permission orchestration
-
-**Goal:** a first run that ends with the service enabled, usage access granted, and the owner
-understanding what protection level is active.
-
-**Checklist**
-- [ ] `PermissionState` model: accessibility, usage access, device admin, device owner, notifications
-- [ ] Live polling of permission state → dashboard indicators (FR-0.4)
-- [ ] Onboarding wizard: 5 steps (accessibility → usage access → device owner → passphrase → lists)
-- [ ] Deep links to the correct Settings pages (`Settings.ACTION_ACCESSIBILITY_SETTINGS`,
-      `ACTION_USAGE_ACCESS_SETTINGS`, `ACTION_MANAGE_DEVICE_ADMIN_ENROLL`, `ACTION_APPLICATION_DETAILS_SETTINGS`)
-- [ ] ADB instructions for Device Owner with a copy-to-clipboard button (mirrors DEVICE_OWNER.md)
-- [ ] `SettingsShield` stays **relaxed** until the accessibility service is confirmed running (FR-5.4)
-- [ ] Verification of the accessibility service via `Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES`
-      **and** the service's own heartbeat
-- [ ] `DevicePolicyGateway` created: `isDeviceOwnerApp`, `isAdminActive`, `lockNow`, `clearDeviceOwnerApp`
-- [ ] First-run "why" message prompt, stored in `why_message`
-- [ ] All onboarding steps are skippable except the Accessibility service
-
-**Verification:** fresh install → follow the wizard → the dashboard shows every permission green;
-the accessibility service is running; usage access is granted.
-
-**Exit criteria:** a non-technical owner can reach an armed state with only the on-screen
-instructions and one copy-pasted ADB command.
-
----
-
-## Phase 3 — Website blocking engine
-
-**Goal:** a blocked URL never opens.
-
-**Checklist**
-- [ ] `BrowserProfiles`: per-package address-bar resource-id candidates (Chrome, Samsung Internet,
-      Firefox, AOSP Browser) — **confirmed on the device**, not guessed
-- [ ] `BrowserProbe`: extract candidate URL/title text from the active window
-      (resource-id match → EditText fallback → title fallback)
-- [ ] Diagnostic screen dumping the last-seen node tree (resource IDs, classes, text) to
-      speed up browser breakage (Risk R3)
-- [ ] `HostNormalizer` wired into the probe (strip scheme/www/port/path, IDN → ASCII)
-- [ ] Public-suffix-aware host matching, exact + subdomain + wildcard patterns
-- [ ] Keyword matching (substring; optional regex and page-text matching per rule)
-- [ ] `MatchEngine` orchestration → `MatchResult`
-- [ ] `BlockController`: `GLOBAL_ACTION_HOME` → launch `BlockedActivity` (singleTask, noHistory,
-      excludeFromRecents, showWhenLocked)
-- [ ] `BlockedActivity` UI: matched rule, target host, current streak, cooldown state, panic button
-- [ ] Back button on the block screen returns Home instead of closing it (FR-1.10)
-- [ ] Re-entrancy guard + 750 ms minimum interval between block actions
-- [ ] `BLOCKED_SITE` event written with host, URL, browser package, rule id
-- [ ] Chrome + Samsung Internet verified on the Galaxy A20 (typed URL, pasted URL, link tap,
-      history-typed URL, redirect to a blocked host)
-- [ ] Incognito / custom-tab behaviour documented (known limitation or handled)
-
-**Verification:** the FR-1 acceptance cases plus the Phase 10 matrix rows for websites.
-
-**Exit criteria:** every URL in the acceptance matrix is blocked in under 500 ms, with an event row.
-
----
-
-## Phase 4 — App blocking engine
+## Phase 2 — App blocking engine
 
 **Goal:** a blocked app never opens, and the phone stays fully usable.
 
@@ -179,9 +153,12 @@ somebody blocklists them by mistake.
 
 ---
 
-## Phase 5 — Blocklist management
+## Phase 3 — Blocklist management
 
 **Goal:** the lists are comfortable to edit, including from a PC.
+
+**Already in Phase 1:** the Websites and Keywords tabs with add / delete / enable and validation.
+Remaining here: the Apps tab, import / export, and rule notes.
 
 **Checklist**
 - [ ] Blocklists screen with three tabs (Apps / Websites / Keywords)
@@ -206,7 +183,7 @@ engine picks up changes instantly.
 
 ---
 
-## Phase 6 — Protection hardening
+## Phase 4 — Protection hardening
 
 **Goal:** disabling SelfGuard becomes slow, loud and logged — while a safe exit always exists.
 
@@ -246,7 +223,7 @@ logged and audible, and the owner can still exit safely with either method.
 
 ---
 
-## Phase 7 — Statistics and streaks
+## Phase 5 — Statistics and streaks
 
 **Goal:** visible progress that rewards good days.
 
@@ -272,7 +249,7 @@ cross-check of 3 days of simulated activity.
 
 ---
 
-## Phase 8 — Panic button
+## Phase 6 — Panic button
 
 **Goal:** a private, offline way to ride out the urge.
 
@@ -297,7 +274,7 @@ cool-down window.
 
 ---
 
-## Phase 9 — Hardening, battery, and release build
+## Phase 7 — Hardening, battery, and release build
 
 **Goal:** the app is quiet, stable, and installable as a signed APK.
 
@@ -323,11 +300,17 @@ cool-down window.
 
 ---
 
-## Phase 10 — Acceptance test matrix on the Galaxy A20
+## Phase 8 — Acceptance test matrix on the Galaxy A20
 
 **Goal:** a written, executed test matrix; the only definition of "done".
 
 ### Website blocking
+
+*Already exercised on an Android 14 development device (Chrome): keyword rule in the URL bar,
+domain rule added through the UI, allowed host not blocked, public-suffix rejection at entry,
+block screen shown and its Home button working. Every row below must still be re-run on the
+Galaxy A20 (Android 11 / One UI 3).*
+
 - [ ] Typed blocked URL in Chrome → blocked, redirected, logged
 - [ ] Pasted blocked URL in Chrome → blocked
 - [ ] Tapped a link to a blocked host → blocked

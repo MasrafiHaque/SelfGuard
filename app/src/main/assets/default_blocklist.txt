@@ -1,0 +1,132 @@
+# SelfGuard default blocklist
+# ---------------------------------------------------------------------------
+# This file is bundled in the APK. Edit it, rebuild, reinstall, and the new
+# list is loaded (use "Restore defaults" in the app after reinstalling).
+#
+# Format
+#   - One entry per line.
+#   - "#" starts a comment.
+#   - A "# domains" or "# keywords" header switches the meaning of the lines
+#     that follow. Without a header, an entry containing a dot is treated as a
+#     domain and anything else is treated as a keyword.
+#   - Domains are written without scheme and without "www." (example.com).
+#     Subdomains are blocked together with the domain itself.
+#   - Keywords are matched case-insensitively against the address bar, the
+#     page title and the visible text of the page.
+#
+# Keep keywords specific. A word like "sex" also appears in medical content,
+# and a keyword that is too generic will block innocent pages.
+# This default list is only a starting point. Add your own trigger words.
+# ---------------------------------------------------------------------------
+
+# domains
+pornhub.com
+pornhubpremium.com
+xvideos.com
+xnxx.com
+xhamster.com
+redtube.com
+youporn.com
+onlyfans.com
+fansly.com
+chaturbate.com
+stripchat.com
+bongacams.com
+myfreecams.com
+cam4.com
+livejasmin.com
+imlive.com
+spankbang.com
+motherless.com
+fapello.com
+fapello.net
+eporner.com
+rule34.xxx
+rule34.paheal.us
+e621.com
+hentaihaven.xxx
+nhentai.net
+hanime.tv
+hanime1.me
+tsumino.moe
+hitomi.la
+e-hentai.org
+exhentai.org
+nijie.info
+booru.donmai.us
+fakku.com
+fakku.net
+imgfap.com
+imagefap.com
+fotosepia.com
+erome.com
+asmhentai.com
+hentaistreaming.com
+watchhentai.net
+superhentai.com
+sexhub.com
+xhamster.desi
+spankbang.party
+xxx.com
+adultfriendfinder.com
+literotica.com
+lewd.life
+gelbooru.com
+porn-360.com
+pornhd.com
+hd-porn.com
+newgrounds.com
+subscribeme.com
+xxxvideo.com
+xxxtube.com
+pornmd.com
+pornhub.la
+xn--fiq228c.com
+xn--90a3ac.com
+xn--80adxhks.com
+xn--80aswg.com
+xn--80asehdb.com
+xn--fiqs8s.com
+
+# keywords
+porn
+porno
+pornhub
+pornstar
+hentai
+sex video
+sex tape
+sex cams
+onlyfans
+fansly
+camgirl
+cam girl
+blowjob
+handjob
+creampie
+cumshot
+milf
+teenporn
+free porn
+hd porn
+premium porn
+nude video
+nude video
+stripchat
+chaturbate
+myfreecams
+cam4
+bongacams
+xhamster
+xvideos
+redtube
+youporn
+xnxx
+rule34
+e621
+booru
+gelbooru
+motherless
+fapello
+erome
+fansly
