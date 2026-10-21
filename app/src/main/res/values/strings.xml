@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">SelfGuard</string>
+
+    <string name="accessibility_service_label">SelfGuard Protection</string>
+    <string name="accessibility_service_summary">Blocks websites and apps on your blocklist.</string>
+    <string name="accessibility_service_description">SelfGuard reads the address bar and screen text of your browser to check it against your blocklist, and detects which app is in the foreground so it can block apps you chose. It never sends anything off the device.</string>
+
+    <string name="device_admin_label">SelfGuard Protection</string>
+</resources>

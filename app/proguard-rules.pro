@@ -1,0 +1,2 @@
+-keep class com.selfguard.service.deviceadmin.SelfGuardDeviceAdminReceiver { *; }
+-keep class com.selfguard.service.accessibility.SelfGuardAccessibilityService { *; }
