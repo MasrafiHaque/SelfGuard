@@ -14,6 +14,7 @@ import com.selfguard.domain.match.RuleKind
 import com.selfguard.domain.model.BlockedApp
 import com.selfguard.domain.model.BlockedKeyword
 import com.selfguard.domain.model.BlockedSite
+import com.selfguard.domain.protection.SettingsShield
 import com.selfguard.ui.blocked.BlockedActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -43,6 +44,11 @@ class SelfGuardAccessibilityService : AccessibilityService() {
     @Volatile
     private var settings = SettingsSnapshot()
 
+    @Volatile
+    private var armed = false
+
+    private var selfLabel: String = "SelfGuard"
+
     private val lastContentCheck = HashMap<String, Long>()
 
     @Volatile
@@ -60,6 +66,12 @@ class SelfGuardAccessibilityService : AccessibilityService() {
         scope.launch { c.blocklistRepository.keywords.collectLatest { keywords = it } }
         scope.launch { c.blocklistRepository.apps.collectLatest { apps = it } }
         scope.launch { c.settingsStore.settings.collectLatest { settings = it } }
+        scope.launch { c.protectionStore.protection.collectLatest { armed = it.armed } }
+        selfLabel = runCatching {
+            packageManager.getApplicationLabel(
+                packageManager.getApplicationInfo(packageName, 0),
+            ).toString()
+        }.getOrDefault("SelfGuard")
         Log.i(TAG, "Service connected")
     }
 
@@ -71,7 +83,10 @@ class SelfGuardAccessibilityService : AccessibilityService() {
 
         when (e.eventType) {
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
-                // An app launch is only visible here, so check it first.
+                // The settings shield runs first so a protected screen can
+                // never be reached while protection is armed.
+                if (checkShield(e)) return
+                // An app launch is only visible here, so check it next.
                 if (checkAppBlock(pkg)) return
                 if (BrowserProfiles.isBrowser(pkg)) handleWindowState(pkg)
             }
@@ -127,6 +142,35 @@ class SelfGuardAccessibilityService : AccessibilityService() {
             label = rule.label.ifBlank { pkg },
             matchedText = pkg,
             host = pkg,
+        )
+        workScope.launch { triggerBlock(matched) }
+        return true
+    }
+
+    /**
+     * Blocks protected settings screens while protection is armed (FR-4.3).
+     * Detection is best-effort — class names vary across OEMs — and covers
+     * Accessibility, Device admin and the app-info page of SelfGuard itself.
+     */
+    private fun checkShield(event: AccessibilityEvent): Boolean {
+        if (!armed) return false
+        val title = event.text?.firstOrNull()?.toString()
+            ?: event.contentDescription?.toString()
+        val kind = SettingsShield.classify(
+            className = event.className?.toString(),
+            title = title,
+            selfLabel = selfLabel,
+        ) ?: return false
+        val now = System.currentTimeMillis()
+        if (now - lastBlockAt < BLOCK_DEBOUNCE_MS) return true
+        lastBlockAt = now
+        Log.i(TAG, "Blocked SHIELD rule=${kind.name}")
+        val matched = MatchedRule(
+            kind = RuleKind.SHIELD,
+            ruleId = 0L,
+            label = kind.userMessage(selfLabel),
+            matchedText = event.className?.toString().orEmpty(),
+            host = null,
         )
         workScope.launch { triggerBlock(matched) }
         return true

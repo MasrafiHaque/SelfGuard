@@ -206,11 +206,18 @@ adb kill-server && adb start-server && adb devices
 
 | Capability | API | Effect |
 |---|---|---|
-| `setPackagesSuspended` | 23 | Blocked apps cannot launch and disappear from the launcher while suspended |
-| `setApplicationHidden` | 30 | Optional: hide a blocked app from the launcher and app drawer |
-| `lockNow()` | 21 | Lock the screen on a tamper attempt |
+| `setUninstallBlocked` | 21 | The system refuses `adb uninstall` and long-press uninstall while SelfGuard is the Device Owner; toggled automatically when protection is armed/released |
+| `setPackagesSuspended` | 23 | Blocked apps cannot launch and disappear from the launcher while suspended (Phase 5) |
+| `setApplicationHidden` | 30 | Optional: hide a blocked app from the launcher and app drawer (Phase 5) |
+| `lockNow()` | 21 | Lock the screen on a tamper attempt (Phase 5) |
 | `clearDeviceOwnerApp()` | 21 | The release flow (§7) |
 | `isDeviceOwnerApp()` | 21 | Detect DO mode |
+
+**Plain Device Admin vs Device Owner:** activating SelfGuard as a Device Admin in Settings only
+adds `lockNow()`. Every DO-only call above — including **uninstall blocking** — checks
+`isDeviceOwnerApp()` first and is skipped when the role is missing, so the Settings screen can
+show the honest state (*Device Owner: No*) instead of pretending. The in-app Settings → Protection
+card shows the `set-device-owner` command with a copy button for exactly this reason.
 
 **Explicitly not used, ever:** `wipeData`, `wipeDataLocked`, `resetPassword`,
 `setPasswordQuality`, `setStorageEncryptionStatus`. The device-admin policy file
@@ -219,10 +226,16 @@ no `<wipe-data/>` element, and the app contains no code that could call a destru
 
 ## 6. Recovering if the Accessibility service is disabled or the app misbehaves
 
+While protection is **armed**, SelfGuard runs a small watchdog service (a persistent low-priority
+notification). It watches the secure accessibility-services setting and calls
+`AccessibilityManager.enableSelf()` when it sees the service switched off — on stock Android the
+service comes back within a second or two. This is hidden API used by reflection and is
+best-effort: some OEM skins ignore it. The manual paths below always work.
+
 | Situation | Fix |
 |---|---|
-| Accessibility service stopped | Settings → Accessibility → Installed apps → SelfGuard Protection → enable (the shield is relaxed while protection is unarmed) |
-| Accessibility service stopped *and* protection armed | Developer options → Accessibility services is still reachable; or ADB: `adb shell settings put secure enabled_accessibility_services com.selfguard/com.selfguard.service.accessibility.SelfGuardAccessibilityService && adb shell settings put secure accessibility_enabled 1` |
+| Accessibility service stopped (unarmed) | Settings → Accessibility → Installed apps → SelfGuard Protection → enable |
+| Accessibility service stopped *and* protection armed | Wait for the watchdog; or Developer options → Accessibility services; or ADB: `adb shell settings put secure enabled_accessibility_services com.selfguard/com.selfguard.service.accessibility.SelfGuardAccessibilityService && adb shell settings put secure accessibility_enabled 1` |
 | Usage access revoked | Settings → Apps → Special app access → Usage access → SelfGuard → allow |
 | The phone is locked by `lockNow()` | Unlock with your normal PIN/pattern — SelfGuard never changes the lock-screen password |
 | The app is stuck in a crash loop | `adb shell am force-stop com.selfguard`, then launch it from the launcher |
@@ -237,21 +250,23 @@ There are two ways out. Both are permanent and both are tested in Phase 10.
 
 ### 7.1 In-app release (primary)
 
-**SelfGuard → Settings → Protection → "Release device protection".**
+**SelfGuard → Settings → Protection → switch "Settings shield armed" off.**
 
-The button is enabled when either:
+Release is never instant (FR-4.7 / FR-4.8):
 
-- the cooldown is **not** running **and** at least 24 hours have passed since the last protection
-  change, or
-- you enter the **accountability passphrase** (this skips the remaining cooldown).
+- **Cooldown path** — a 24-hour cooldown starts at the moment you request the release. The
+  shield stays armed for the whole cooldown. When the 24 hours are over, tapping release again
+  completes it.
+- **Passphrase path** — if an accountability passphrase is set, entering it releases immediately
+  and skips the remaining cooldown. Five wrong attempts lock the passphrase for 15 minutes.
 
-After confirming, SelfGuard:
+After the release completes, SelfGuard:
 
-1. calls `DevicePolicyManager.clearDeviceOwnerApp("com.selfguard")`,
-2. deactivates Device Admin,
-3. optionally removes the blocked-app suspension/hiding,
-4. logs the release (timestamp, reason, whether the passphrase was used),
-5. leaves the app installed and fully usable in "unprotected" mode.
+1. turns the settings shield off and stops the watchdog,
+2. clears `setUninstallBlocked` and calls `DevicePolicyManager.clearDeviceOwnerApp("com.selfguard")`
+   when the Device Owner role is held (nothing to clear otherwise),
+3. logs the release (timestamp and whether the passphrase was used),
+4. leaves the app installed and fully usable in "unprotected" mode.
 
 Afterwards the app can be uninstalled normally:
 
@@ -309,3 +324,32 @@ adb shell settings put secure accessibility_enabled 1
 # watch what the service sees
 adb logcat -s SelfGuard:V
 ```
+
+## 9. Android 11 and OEM limits (honest list)
+
+The target device is a Galaxy A20 on Android 11 / One UI 3; development also happens on Android 14
+skins. What does and does not work is stated here so nothing is a surprise:
+
+1. **A plain Device Admin cannot block uninstall.** `setUninstallBlocked` requires the Device
+   Owner role. Without it SelfGuard still arms the settings shield, but `adb uninstall` (or
+   long-press uninstall) succeeds. This is an Android rule, not an app limitation.
+2. **`dpm set-device-owner` needs a "clean" device:** no accounts, no secondary users, no other
+   owner (§4). On an already-provisioned Android 11 phone it may refuse outright; the only
+   guaranteed path then is a factory reset with DO set first (§4.4), which is why this guide
+   exists.
+3. **The settings shield is best-effort.** It matches AOSP activity class names
+   (`AccessibilitySettingsActivity`, `DeviceAdminSettingsActivity`, `InstalledAppDetailsActivity`)
+   plus an exact visible-heading fallback. OEMs (One UI, ColorOS, Funtouch …) sometimes rename or
+   nest these activities; an unrecognised screen is not blocked. The ADB paths in §6/§7 always
+   remain as the recovery net.
+4. **`enableSelf()` self-recovery is hidden API** (reflection on the greylist). It works on stock
+   Android; aggressive OEM battery managers may still kill or ignore it. The boot receiver
+   restarts the watchdog after every reboot regardless.
+5. **Force-stop cannot be self-healed.** If the user force-stops SelfGuard from app info (possible
+   while the shield is off), only a manual launch or a reboot restarts it. The shield's job is to
+   make reaching that button take a cooldown's worth of friction.
+6. **Background-start restrictions:** Android 12+ limits starting foreground services from the
+   background; SelfGuard only starts its watchdog from `BOOT_COMPLETED` / `MY_PACKAGE_REPLACED`
+   (both exempt) and from the arming action (user-present). Android 11 has no such restriction.
+7. **`LOCK_NOW`/`FORCE-LOCK` only** — SelfGuard never changes or removes the lock-screen
+   credential, and there is no wipe path anywhere in the app.

@@ -127,6 +127,7 @@ private fun BlockedScreen(
                     text = when (kind) {
                         "DOMAIN" -> "$label is on your blocklist"
                         "APP" -> "$label is on your app blocklist"
+                        "SHIELD" -> label
                         else -> "Keyword \"$match\" matched"
                     },
                     color = Color(0xFFC8D6C4),

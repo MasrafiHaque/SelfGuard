@@ -13,17 +13,20 @@
 | 0 | Skeleton & tooling | Building project, empty shell app | ✅ done | — |
 | 1 | Blocking foundation | Data layer, matching engine, onboarding, website blocking, editable lists | ✅ done | 0 |
 | 2 | App blocking | Blocked apps never open, phone stays usable | ✅ done | 1 |
-| 3 | Blocklist management | Apps tab, import/export, categories | 1.5 days | 1, 2 |
-| 4 | Protection hardening | Hard to disable, safe way out | 2 days | 1, 2 |
-| 5 | Statistics & streaks | Visible progress | 1 day | 1, 3 |
-| 6 | Panic button | A way to ride out the urge | 1 day | 1, 5 |
-| 7 | Hardening & release | Battery, Samsung quirks, signed APK | 1 day | 2–6 |
-| 8 | Acceptance & docs | Verified on the Galaxy A20 | 1 day | 7 |
+| 3 | Self-protection | Settings shield, 24 h release cooldown, passphrase, auto-restart | ✅ done | 1, 2 |
+| 4 | Blocklist management | Import/export, categories, richer editing | 1.5 days | 1, 2 |
+| 5 | Protection hardening | Tamper pipeline, alarm, duress, DO suspend/hide | 1.5 days | 3 |
+| 6 | Statistics & streaks | Visible progress | 1 day | 1, 4 |
+| 7 | Panic button | A way to ride out the urge | 1 day | 1, 6 |
+| 8 | Hardening & release | Battery, Samsung quirks, signed APK | 1 day | 2–7 |
+| 9 | Acceptance & docs | Verified on the Galaxy A20 | 1 day | 8 |
 
 Total ≈ 10–11 days of focused work.
 
 Phase 1 was originally planned as three phases (foundation / onboarding / website blocking).
 They were delivered together because the blocking engine needs all three to be demonstrable.
+Phase 3 was originally "protection hardening"; its first half (self-protection) shipped early as
+its own phase, and the remaining tamper pipeline stays as Phase 5.
 
 ---
 
@@ -101,10 +104,10 @@ starter list, and the JVM test suite.
 - [x] `./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug` green
 
 **Deferred to later phases**
-- Blocked-site event rows and statistics → Phase 5
-- Apps tab, import / export, categories and notes → Phase 3
-- Diagnostic node-tree screen for browser breakage → Phase 3
-- Samsung Internet and Firefox verification on the Galaxy A20 → Phase 8
+- Blocked-site event rows and statistics → Phase 6
+- Apps tab, import / export, categories and notes → Phases 2 / 4
+- Diagnostic node-tree screen for browser breakage → Phase 4
+- Samsung Internet and Firefox verification on the Galaxy A20 → Phase 9
 
 **Verification:** build + lint + unit tests green, and a device walkthrough on Android 14 during
 development: onboarding blocks until the service is on → seeded list (67 / 39) → keyword rule
@@ -156,7 +159,58 @@ block-time rejection of critical packages; unit tests + `lintDebug` green.
 
 ---
 
-## Phase 3 — Blocklist management
+## Phase 3 — Self-protection ✅
+
+**Goal:** disabling SelfGuard becomes slow and deliberate — while a safe exit always exists.
+
+**Delivered**
+- **Settings shield** (pure `domain/protection/SettingsShield`): on `TYPE_WINDOW_STATE_CHANGED`,
+  while `protection.armed`, protected screens are classified from the event class name (AOSP
+  `AccessibilitySettingsActivity`, `DeviceAdminSettingsActivity`, `InstalledAppDetailsActivity`)
+  with a `SubSettings` exact-title fallback for OEMs. Covered: Accessibility, Device admin, and the
+  app-info page of SelfGuard itself (title match, so other apps' info pages stay usable).
+  Matches fire as `RuleKind.SHIELD` → `BlockedActivity`.
+- **Arm / release flow** (`ProtectionRepository` + Settings → Protection card): arming turns the
+  shield on and starts the watchdog. Release is never instant — either a fixed **24-hour cooldown**
+  started at the release request, or the **partner passphrase** skips it entirely. The shield stays
+  armed for the whole cooldown.
+- **Passphrase** (pure `PassphraseHasher`): PBKDF2-HMAC-SHA256, 200 000 iterations, 16-byte
+  random salt, constant-time compare; only salt + hash are stored. Rate limiting (pure
+  `PassphrasePolicy`): 5 failed attempts → 15-minute lockout, persisted.
+- **Uninstall blocking**: `DeviceAdminGateway.setUninstallBlocked` is toggled with arm/release —
+  but it requires the **Device Owner** role; a plain Device Admin is refused by the system, so the
+  Settings card shows the `adb shell dpm set-device-owner …` command (copyable) and the honest
+  "Device Owner: No" state. No wipe policy, no destructive DPM call anywhere.
+- **Auto-restart**: `ProtectionWatchdogService` is a `START_STICKY` foreground service with a
+  low-importance notification, started by `BootReceiver` on `BOOT_COMPLETED` / `QUICKBOOT_POWERON`
+  / `MY_PACKAGE_REPLACED` (only while armed) and by `arm()`. A `ContentObserver` on
+  `Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES` reacts to the service being switched off and
+  requests `AccessibilityManager.enableSelf()` (greylist reflection — the API is `@hide`; best
+  effort on OEM skins, failures logged, never fatal).
+- **Device admin receiver**: `onEnabled` / `onDisabled` logged (`onDisabled` marked as tamper for
+  the Phase 6 event log).
+
+**Verification**
+- `./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug` green: 48 unit tests total,
+  27 new here (`SettingsShieldTest` 11, `PassphraseHasherTest` 9, `ReleaseGateTest` 5 + policy);
+  no new lint issues.
+- On-device matrix (arm → shield blocks Accessibility / Device admin / SelfGuard app-info,
+  non-sensitive settings stay usable, watchdog re-enables the service after
+  `settings put secure enabled_accessibility_services null`, cooldown + passphrase release,
+  `dpm set-device-owner` attempt) is pending reconnection of the Android 14 development device;
+  rows are tracked in Phase 9's Protection-durability section.
+
+**Known limits (documented, not hidden)**
+- Shield detection is best-effort: OEMs rename settings activities; `SubSettings` uses an exact
+  visible-heading match only.
+- `enableSelf()` is hidden API (reflection): reliable on stock Android, may be ignored by
+  aggressive OEM skins — ADB recovery always exists (DEVICE_OWNER §6).
+- Uninstall blocking, suspend/hide, alarm, duress and the full tamper pipeline need the Device
+  Owner groundwork → Phase 5.
+
+---
+
+## Phase 4 — Blocklist management
 
 **Goal:** the lists are comfortable to edit, including from a PC.
 
@@ -167,18 +221,18 @@ and a protected-packages filter so launcher / IME / critical apps are never offe
 Remaining here: import / export, rule notes, and the richer Websites/Keywords editing.
 
 **Checklist**
-- [ ] Blocklists screen with three tabs (Apps / Websites / Keywords)
-- [ ] Apps tab: list of installed packages with labels and icons (via `QUERY_ALL_PACKAGES`),
+- [x] Blocklists screen with three tabs (Apps / Websites / Keywords)
+- [x] Apps tab: list of installed packages with labels and icons (via `QUERY_ALL_PACKAGES`),
       search, one-tap block, and a "system apps hidden" filter
-- [ ] Websites tab: host validation, normalised preview, subdomain toggle, wildcard support
-- [ ] Keywords tab: over-match warning for very short rules, regex toggle, page-text toggle
+- [x] Websites tab: host validation, normalised preview, subdomain toggle, wildcard support
+- [x] Keywords tab: over-match warning for very short rules, regex toggle, page-text toggle
 - [ ] Add / edit / enable / disable / delete (with a confirmation showing the fire count)
 - [ ] Categories and notes on every rule
 - [ ] Export → JSON and plain text, into a user-chosen location (SAF `ACTION_CREATE_DOCUMENT`)
 - [ ] Import → file picker, preview, validation report (accepted / skipped / invalid),
       merge or replace choice
 - [ ] Starter pack (common adult domains + keywords), one tap, fully editable afterwards
-- [ ] Rule list refreshes the engine snapshot within 1 s
+- [x] Rule list refreshes the engine snapshot within 1 s
 - [ ] Empty states and first-run guidance
 
 **Verification:** export → reinstall → import reproduces an identical rule set; the ruleset
@@ -189,39 +243,33 @@ engine picks up changes instantly.
 
 ---
 
-## Phase 4 — Protection hardening
+## Phase 5 — Protection hardening (remainder)
 
-**Goal:** disabling SelfGuard becomes slow, loud and logged — while a safe exit always exists.
+**Goal:** every tamper attempt is loud, logged and survivable — while the safe exit keeps working.
 
 > **Deferred from Phase 2:** Device Owner app-suspension (`setPackagesSuspended`) and the optional
 > `setApplicationHidden` (API 30) per-rule toggle, plus the suspend/undelete restore path and the
-> `RULE_SKIPPED_CRITICAL` dashboard warning. These need the Device Owner groundwork being built
-> here, so they land with this phase rather than Phase 2.
+> `RULE_SKIPPED_CRITICAL` dashboard warning. These need the Device Owner groundwork built in
+> Phase 3, so they land here rather than in Phase 2.
 
 **Checklist**
 - [ ] `ProtectionStateMachine` (pure): UNINITIALISED → ARMED → TAMPERED → RELEASE_PENDING → RELEASED
-- [ ] `ProtectionRepository` persists the state in DataStore and exposes it as a `StateFlow`
 - [ ] `BreachDetector` classifies tamper events: accessibility disable attempt, usage-access
       revocation, uninstall attempt, admin deactivation, protection-settings change
-- [ ] Settings shield: protected-screen detection (activity class + resource IDs + visible text)
-- [ ] Shield covers: Accessibility, Installed apps, App info, Force stop, Uninstall, Usage access,
-      Battery optimisation, Device admin apps, Notification access, Permissions, Install unknown apps
-- [ ] Non-sensitive Settings screens stay fully usable (explicit regression test)
-- [ ] Shield re-arms automatically once the accessibility service is connected
+- [ ] Shield extension: Usage access, Battery optimisation, Notification access, Permissions,
+      Install unknown apps (Accessibility / Device admin / SelfGuard app-info are done)
 - [ ] Tamper response pipeline, in order: log → `lockNow()` (DO/DA only) → high-priority
       notification → alarm → cooldown start
 - [ ] `AlarmPlayer`: ≤ 30 s, auto-stop, dismissible, no wakelock held afterwards, plays once per event
-- [ ] Cooldown: 48 h default, configurable 24–72 h; changing the value during a cooldown requires
-      the passphrase; the countdown uses `setChronometerCountDown` (no timer work)
+- [ ] Cooldown configurable 24–72 h (fixed 24 h shipped in Phase 3); changing the value during a
+      cooldown requires the passphrase; the countdown uses `setChronometerCountDown` (no timer work)
 - [ ] Ongoing cooldown notification with the remaining time and the editable "why" message
 - [ ] Blocking stays fully active during a cooldown (verified by test)
-- [ ] Passphrase: PBKDF2-HMAC-SHA256, 200k iterations, 16-byte salt, constant-time compare
-- [ ] Passphrase rate limiting: 5 failures → 15-minute lockout, persisted
-- [ ] Passphrase can skip a cooldown, unlock protected settings, and authorise release
-- [ ] Release flow: `clearDeviceOwnerApp()` + admin deactivation, with cooldown/hold enforcement
-- [ ] Release logged with the reason and whether the passphrase was used
+- [ ] Passphrase can unlock protected settings (skipping the cooldown is done)
 - [ ] Duress passphrase (optional): appears to succeed, records a tamper, starts a cooldown
-- [ ] Admin receiver: `onEnabled` / `onDisabled` logged; `onDisabled` triggers the tamper pipeline
+- [ ] Release logged with the reason and whether the passphrase was used (logcat now, event
+      table in Phase 6)
+- [ ] Device Owner suspend/hide per rule + restore path + `RULE_SKIPPED_CRITICAL` warning
 - [ ] ADB release path re-tested end-to-end (DEVICE_OWNER §7.2)
 - [ ] Confirmed: no `wipe-data` policy, no `wipeData*` call anywhere (grep + review)
 
@@ -234,7 +282,7 @@ logged and audible, and the owner can still exit safely with either method.
 
 ---
 
-## Phase 5 — Statistics and streaks
+## Phase 6 — Statistics and streaks
 
 **Goal:** visible progress that rewards good days.
 
@@ -260,7 +308,7 @@ cross-check of 3 days of simulated activity.
 
 ---
 
-## Phase 6 — Panic button
+## Phase 7 — Panic button
 
 **Goal:** a private, offline way to ride out the urge.
 
@@ -285,7 +333,7 @@ cool-down window.
 
 ---
 
-## Phase 7 — Hardening, battery, and release build
+## Phase 8 — Hardening, battery, and release build
 
 **Goal:** the app is quiet, stable, and installable as a signed APK.
 
@@ -311,7 +359,7 @@ cool-down window.
 
 ---
 
-## Phase 8 — Acceptance test matrix on the Galaxy A20
+## Phase 9 — Acceptance test matrix on the Galaxy A20
 
 **Goal:** a written, executed test matrix; the only definition of "done".
 
@@ -349,9 +397,21 @@ critical packages confirmed. The Device Owner rows below still need the Galaxy A
 - [ ] A system package added to the blocklist by mistake → refused, warning shown
 
 ### Protection durability
+
+*The settings shield (Accessibility, Device admin, SelfGuard's own app-info), the 24-hour release
+cooldown, the passphrase release and the boot/watchdog auto-restart shipped in Phase 3 with unit
+tests; their on-device rows below still need a run on the Android 14 development device and then
+the Galaxy A20, because OEMs rename settings activities.*
+
 - [ ] Settings → Accessibility → redirected to Home + block screen
-- [ ] Settings → App info (SelfGuard) → treated as an uninstall attempt
+- [ ] Settings → Device admin apps → redirected to Home + block screen
+- [ ] Settings → App info (SelfGuard) → redirected (uninstall attempt)
+- [ ] Settings → App info for another app / Wi-Fi / Display → NOT blocked
 - [ ] Settings → Force stop / Uninstall → redirected
+- [ ] Accessibility service switched off while armed → watchdog re-enables it (`enableSelf`)
+- [ ] Phone reboot while armed → watchdog restarts, shield still active
+- [ ] Release requested → 24 h cooldown starts, shield stays on; passphrase releases immediately
+- [ ] 5 wrong passphrase attempts → 15-minute lockout
 - [ ] Usage access revoked → tamper pipeline fires
 - [ ] Every tamper attempt: screen locks, alarm plays ≤ 30 s, notification appears, cooldown starts
 - [ ] Cooldown blocks Release and protected settings; the passphrase unblocks them

@@ -7,11 +7,12 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.selfguard.SelfGuardApp
 import com.selfguard.data.local.InstalledApp
+import com.selfguard.data.local.prefs.ProtectionSnapshot
 import com.selfguard.data.repo.AddResult
+import com.selfguard.data.repo.ReleaseOutcome
 import com.selfguard.domain.model.BlockedApp
 import com.selfguard.domain.model.BlockedKeyword
 import com.selfguard.domain.model.BlockedSite
-import com.selfguard.service.accessibility.SelfGuardAccessibilityService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -39,6 +40,15 @@ class MainViewModel(application: android.app.Application) : AndroidViewModel(app
     val blockedApps: StateFlow<List<BlockedApp>> = container.blocklistRepository.apps
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    val protection: StateFlow<ProtectionSnapshot?> = container.protectionRepository.protection
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    private val _deviceAdminActive = MutableStateFlow(false)
+    val deviceAdminActive: StateFlow<Boolean> = _deviceAdminActive.asStateFlow()
+
+    private val _deviceOwner = MutableStateFlow(false)
+    val deviceOwner: StateFlow<Boolean> = _deviceOwner.asStateFlow()
+
     private val _installedApps = MutableStateFlow<List<InstalledApp>>(emptyList())
     val installedApps: StateFlow<List<InstalledApp>> = _installedApps.asStateFlow()
 
@@ -50,6 +60,7 @@ class MainViewModel(application: android.app.Application) : AndroidViewModel(app
             _installedApps.value = container.appCatalog.loadInstalledApps()
             _installedAppsLoaded.value = true
         }
+        refreshAdminStatus()
     }
 
     /** Packages that can never be blocked (launcher, IME, SelfGuard, critical system apps). */
@@ -149,17 +160,68 @@ class MainViewModel(application: android.app.Application) : AndroidViewModel(app
         }
     }
 
-    fun isAccessibilityServiceEnabled(): Boolean {
-        val expected = "${container.appContext.packageName}/" +
-            SelfGuardAccessibilityService::class.java.name
-        val enabled = Settings.Secure.getString(
-            container.appContext.contentResolver,
-            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
-        ) ?: return false
-        return enabled.split(':').any { it.equals(expected, ignoreCase = true) }
+    fun refreshAdminStatus() {
+        _deviceAdminActive.value = container.deviceAdminGateway.adminActive
+        _deviceOwner.value = container.deviceAdminGateway.deviceOwner
     }
 
+    fun armProtection() {
+        viewModelScope.launch {
+            container.protectionRepository.arm()
+            refreshAdminStatus()
+            _message.value = "Protection armed"
+        }
+    }
+
+    fun beginRelease() {
+        viewModelScope.launch {
+            _message.value = releaseMessage(container.protectionRepository.beginRelease())
+            refreshAdminStatus()
+        }
+    }
+
+    fun releaseWithPassphrase(phrase: String) {
+        viewModelScope.launch {
+            _message.value = releaseMessage(
+                container.protectionRepository.releaseWithPassphrase(phrase),
+            )
+            refreshAdminStatus()
+        }
+    }
+
+    fun setPassphrase(phrase: String) {
+        viewModelScope.launch {
+            val trimmed = phrase.trim()
+            if (trimmed.isEmpty()) {
+                _message.value = "Passphrase must not be blank"
+                return@launch
+            }
+            container.protectionRepository.setPassphrase(trimmed)
+            _message.value = "Passphrase saved"
+        }
+    }
+
+    private fun releaseMessage(outcome: ReleaseOutcome): String = when (outcome) {
+        is ReleaseOutcome.Started -> "Cooldown started — release available in 24 hours"
+        is ReleaseOutcome.InProgress -> "Cooldown running: ${formatRemaining(outcome.remainingMs)} left"
+        is ReleaseOutcome.Completed -> "Protection released"
+        is ReleaseOutcome.WrongPassphrase ->
+            "Wrong passphrase (${outcome.attemptsLeft} attempts left)"
+        is ReleaseOutcome.LockedOut ->
+            "Too many attempts — locked for ${formatRemaining(outcome.remainingMs)}"
+        is ReleaseOutcome.NoPassphrase -> "No passphrase is set yet"
+    }
+
+    fun isAccessibilityServiceEnabled(): Boolean = container.isAccessibilityServiceEnabled()
+
     companion object {
+        fun formatRemaining(ms: Long): String {
+            val totalMinutes = (ms + 59_999L) / 60_000L
+            val hours = totalMinutes / 60L
+            val minutes = totalMinutes % 60L
+            return if (hours > 0) "$hours h $minutes min" else "$minutes min"
+        }
+
         fun openAccessibilitySettings(context: Context) {
             val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -168,6 +230,23 @@ class MainViewModel(application: android.app.Application) : AndroidViewModel(app
                     runCatching {
                         context.startActivity(
                             Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        )
+                    }
+                }
+        }
+
+        fun openDeviceAdminSettings(context: Context) {
+            // Settings.ACTION_DEVICE_ADMIN_SETTINGS is not in the public SDK
+            // surface of current compileSdk versions; the action string is
+            // stable ("android.settings.DEVICE_ADMIN_SETTINGS").
+            val intent = Intent("android.settings.DEVICE_ADMIN_SETTINGS")
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            runCatching { context.startActivity(intent) }
+                .onFailure {
+                    runCatching {
+                        context.startActivity(
+                            Intent(Settings.ACTION_SECURITY_SETTINGS)
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                         )
                     }
                 }

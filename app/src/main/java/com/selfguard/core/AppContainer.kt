@@ -7,12 +7,16 @@ import androidx.room.Room
 import com.selfguard.data.local.AppCatalog
 import com.selfguard.data.local.DefaultBlocklist
 import com.selfguard.data.local.db.SelfGuardDatabase
+import com.selfguard.data.local.prefs.ProtectionStore
 import com.selfguard.data.local.prefs.SettingsStore
 import com.selfguard.data.repo.BlocklistRepository
+import com.selfguard.data.repo.DeviceAdminGateway
+import com.selfguard.data.repo.ProtectionRepository
 import com.selfguard.domain.app.CriticalApps
 import com.selfguard.domain.app.ProtectionReason
 import com.selfguard.domain.match.PublicSuffix
 import com.selfguard.domain.match.RuleMatcher
+import com.selfguard.service.protection.ProtectionWatchdogService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -30,6 +34,17 @@ class AppContainer(context: Context) {
         .build()
 
     val settingsStore = SettingsStore(appContext)
+
+    val protectionStore = ProtectionStore(appContext)
+
+    val deviceAdminGateway = DeviceAdminGateway(appContext)
+
+    val protectionRepository = ProtectionRepository(
+        store = protectionStore,
+        admin = deviceAdminGateway,
+        startWatchdog = { ProtectionWatchdogService.start(appContext) },
+        stopWatchdog = { ProtectionWatchdogService.stop(appContext) },
+    )
 
     val publicSuffix: PublicSuffix = PublicSuffix(PublicSuffix.BUILT_IN + loadSuffixAssets())
 
@@ -65,6 +80,17 @@ class AppContainer(context: Context) {
             Settings.Secure.DEFAULT_INPUT_METHOD,
         )?.substringBefore('/')
     }.getOrNull()
+
+    /** True when this app's accessibility service is enabled in secure settings. */
+    fun isAccessibilityServiceEnabled(): Boolean {
+        val expected = "${appContext.packageName}/" +
+            com.selfguard.service.accessibility.SelfGuardAccessibilityService::class.java.name
+        val enabled = Settings.Secure.getString(
+            appContext.contentResolver,
+            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
+        ) ?: return false
+        return enabled.split(':').any { it.equals(expected, ignoreCase = true) }
+    }
 
     val blocklistRepository = BlocklistRepository(
         database = database,
