@@ -29,3 +29,17 @@ data class BlockedKeyword(
         const val SOURCE_USER = "user"
     }
 }
+
+data class BlockedApp(
+    val id: Long = 0,
+    val packageName: String,
+    val label: String = "",
+    val isEnabled: Boolean = true,
+    val source: String = SOURCE_USER,
+    val addedAt: Long = 0L,
+) {
+    companion object {
+        const val SOURCE_DEFAULT = "default"
+        const val SOURCE_USER = "user"
+    }
+}

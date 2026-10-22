@@ -10,6 +10,8 @@ import com.selfguard.data.local.prefs.SettingsSnapshot
 import com.selfguard.domain.match.Candidate
 import com.selfguard.domain.match.HostNormalizer
 import com.selfguard.domain.match.MatchedRule
+import com.selfguard.domain.match.RuleKind
+import com.selfguard.domain.model.BlockedApp
 import com.selfguard.domain.model.BlockedKeyword
 import com.selfguard.domain.model.BlockedSite
 import com.selfguard.ui.blocked.BlockedActivity
@@ -36,6 +38,9 @@ class SelfGuardAccessibilityService : AccessibilityService() {
     private var keywords: List<BlockedKeyword> = emptyList()
 
     @Volatile
+    private var apps: List<BlockedApp> = emptyList()
+
+    @Volatile
     private var settings = SettingsSnapshot()
 
     private val lastContentCheck = HashMap<String, Long>()
@@ -53,6 +58,7 @@ class SelfGuardAccessibilityService : AccessibilityService() {
 
         scope.launch { c.blocklistRepository.sites.collectLatest { sites = it } }
         scope.launch { c.blocklistRepository.keywords.collectLatest { keywords = it } }
+        scope.launch { c.blocklistRepository.apps.collectLatest { apps = it } }
         scope.launch { c.settingsStore.settings.collectLatest { settings = it } }
         Log.i(TAG, "Service connected")
     }
@@ -61,14 +67,23 @@ class SelfGuardAccessibilityService : AccessibilityService() {
         val e = event ?: return
         val pkg = e.packageName?.toString() ?: return
         if (pkg == packageName) return
-        if (!BrowserProfiles.isBrowser(pkg)) return
         if (!settings.blockingEnabled) return
-        if (sites.isEmpty() && keywords.isEmpty()) return
 
         when (e.eventType) {
-            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> handleWindowState(pkg)
-            AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED -> handleViewText(e)
-            AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> handleContentChanged(pkg)
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
+                // An app launch is only visible here, so check it first.
+                if (checkAppBlock(pkg)) return
+                if (BrowserProfiles.isBrowser(pkg)) handleWindowState(pkg)
+            }
+
+            AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED -> {
+                if (BrowserProfiles.isBrowser(pkg)) handleViewText(e)
+            }
+
+            AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> {
+                if (BrowserProfiles.isBrowser(pkg)) handleContentChanged(pkg)
+            }
+
             else -> Unit
         }
     }
@@ -87,6 +102,34 @@ class SelfGuardAccessibilityService : AccessibilityService() {
         scope.cancel()
         workScope.cancel()
         return super.onUnbind(intent)
+    }
+
+    /**
+     * Returns true when the package is on the app blocklist and a block was
+     * triggered. Critical packages are refused here as well as at entry, so a
+     * hand-edited database cannot lock the owner out of the phone (FR-2.5).
+     */
+    private fun checkAppBlock(pkg: String): Boolean {
+        val rule = apps.firstOrNull { it.packageName == pkg && it.isEnabled } ?: return false
+        val c = container ?: return false
+        val protection = c.protectReason(pkg)
+        if (protection != null) {
+            Log.w(TAG, "Refusing to block $pkg: ${protection.name}")
+            return false
+        }
+        val now = System.currentTimeMillis()
+        if (now - lastBlockAt < BLOCK_DEBOUNCE_MS) return true
+        lastBlockAt = now
+        Log.i(TAG, "Blocked APP rule=$pkg")
+        val matched = MatchedRule(
+            kind = RuleKind.APP,
+            ruleId = rule.id,
+            label = rule.label.ifBlank { pkg },
+            matchedText = pkg,
+            host = pkg,
+        )
+        workScope.launch { triggerBlock(matched) }
+        return true
     }
 
     private fun handleWindowState(packageName: String) {

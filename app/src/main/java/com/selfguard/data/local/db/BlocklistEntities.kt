@@ -31,6 +31,16 @@ data class BlockedKeywordEntity(
     val addedAt: Long = 0L,
 )
 
+@Entity(tableName = "blocked_apps")
+data class BlockedAppEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val packageName: String,
+    val label: String = "",
+    val isEnabled: Boolean = true,
+    val source: String = "user",
+    val addedAt: Long = 0L,
+)
+
 @Dao
 interface BlockedSiteDao {
     @Query("SELECT * FROM blocked_sites ORDER BY domain ASC")
@@ -82,5 +92,29 @@ interface BlockedKeywordDao {
     suspend fun delete(id: Long)
 
     @Query("DELETE FROM blocked_keywords")
+    suspend fun deleteAll()
+}
+
+@Dao
+interface BlockedAppDao {
+    @Query("SELECT * FROM blocked_apps ORDER BY label ASC")
+    fun observeAll(): Flow<List<BlockedAppEntity>>
+
+    @Query("SELECT * FROM blocked_apps")
+    suspend fun getAll(): List<BlockedAppEntity>
+
+    @Query("SELECT COUNT(*) FROM blocked_apps")
+    suspend fun count(): Int
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(item: BlockedAppEntity): Long
+
+    @Query("UPDATE blocked_apps SET isEnabled = :enabled WHERE id = :id")
+    suspend fun setEnabled(id: Long, enabled: Boolean)
+
+    @Query("DELETE FROM blocked_apps WHERE id = :id")
+    suspend fun delete(id: Long)
+
+    @Query("DELETE FROM blocked_apps")
     suspend fun deleteAll()
 }

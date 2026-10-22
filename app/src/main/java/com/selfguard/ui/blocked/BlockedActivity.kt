@@ -124,10 +124,10 @@ private fun BlockedScreen(
             )
             if (label.isNotBlank()) {
                 Text(
-                    text = if (kind == "DOMAIN") {
-                        "$label is on your blocklist"
-                    } else {
-                        "Keyword \"$match\" matched"
+                    text = when (kind) {
+                        "DOMAIN" -> "$label is on your blocklist"
+                        "APP" -> "$label is on your app blocklist"
+                        else -> "Keyword \"$match\" matched"
                     },
                     color = Color(0xFFC8D6C4),
                     fontSize = 16.sp,

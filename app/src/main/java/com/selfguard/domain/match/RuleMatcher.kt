@@ -3,7 +3,7 @@ package com.selfguard.domain.match
 import com.selfguard.domain.model.BlockedKeyword
 import com.selfguard.domain.model.BlockedSite
 
-enum class RuleKind { DOMAIN, KEYWORD }
+enum class RuleKind { DOMAIN, KEYWORD, APP }
 
 data class MatchedRule(
     val kind: RuleKind,

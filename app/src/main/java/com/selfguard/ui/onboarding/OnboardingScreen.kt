@@ -12,8 +12,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -64,7 +64,7 @@ fun OnboardingScreen(
         }
 
         Text(
-            text = "Block adult websites and keywords on this phone.",
+            text = "Block apps, adult websites and keywords on this phone.",
             style = MaterialTheme.typography.titleMedium,
         )
 
@@ -93,8 +93,8 @@ fun OnboardingScreen(
                     fontWeight = FontWeight.Bold,
                 )
                 Text(
-                    text = "SelfGuard reads the address bar of your browser so it can check it " +
-                        "against your blocklist. Nothing is sent off the phone.",
+                    text = "SelfGuard checks which app and which website is open so it can " +
+                        "compare them against your blocklist. Nothing is sent off the phone.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 if (serviceEnabled) {
@@ -116,7 +116,7 @@ fun OnboardingScreen(
                         onClick = { MainViewModel.openAccessibilitySettings(context) },
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Icon(Icons.Default.OpenInNew, contentDescription = null)
+                        Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null)
                         Spacer(Modifier.size(8.dp))
                         Text("Open accessibility settings")
                     }
@@ -141,8 +141,9 @@ fun OnboardingScreen(
                 )
                 Text(
                     text = "SelfGuard ships with a starter list of adult domains and keywords. " +
-                        "You can add or remove entries in the app, and you can edit the bundled " +
-                        "list in assets/default_blocklist.txt and rebuild.",
+                        "You can also pick apps to block from the apps on this phone. " +
+                        "You can add or remove entries in the Blocklist tab, and you can edit " +
+                        "the bundled list in assets/default_blocklist.txt and rebuild.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }

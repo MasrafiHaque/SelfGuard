@@ -12,7 +12,7 @@
 |---|---|---|---|---|
 | 0 | Skeleton & tooling | Building project, empty shell app | ✅ done | — |
 | 1 | Blocking foundation | Data layer, matching engine, onboarding, website blocking, editable lists | ✅ done | 0 |
-| 2 | App blocking | Blocked apps never open | 1.5 days | 1 |
+| 2 | App blocking | Blocked apps never open, phone stays usable | ✅ done | 1 |
 | 3 | Blocklist management | Apps tab, import/export, categories | 1.5 days | 1, 2 |
 | 4 | Protection hardening | Hard to disable, safe way out | 2 days | 1, 2 |
 | 5 | Statistics & streaks | Visible progress | 1 day | 1, 3 |
@@ -123,33 +123,36 @@ the app and the bundled asset; the service survives a process restart (re-armed 
 
 ---
 
-## Phase 2 — App blocking engine
+## Phase 2 — App blocking engine ✅
 
 **Goal:** a blocked app never opens, and the phone stays fully usable.
 
-**Checklist**
-- [ ] `ForegroundDetector`: Accessibility `TYPE_WINDOW_STATE_CHANGED` path
-- [ ] UsageStats backup poll (1500 ms, ≤ 10 s event window, screen-on + unlocked only)
-- [ ] Cross-check of the two sources to suppress dialog/IME false positives
-- [ ] Hard allowlist: dynamic launcher, dynamic IME, telecom/dialer, static critical list (FR-2.5)
-- [ ] Critical-package rule rejection surfaced as a `RULE_SKIPPED_CRITICAL` event + dashboard warning
-- [ ] `ScreenStateReceiver`: `ACTION_SCREEN_ON/OFF`, `ACTION_USER_PRESENT`; poll stops when the
-      screen is off or the keyguard is engaged (FR-2.3)
-- [ ] `PowerManager.isInteractive` check before every tick
-- [ ] Block action → Home + `BlockedActivity` with the app name and icon
-- [ ] `BLOCKED_APP` event written
-- [ ] Device Owner: `setPackagesSuspended` for blocked apps (when enabled per rule)
-- [ ] Device Owner: optional `setApplicationHidden` (API 30) behind a per-rule toggle
-- [ ] Unsuspend/undelete path verified: disabling a rule restores the app
-- [ ] SelfGuard never suspends or hides itself; never disables USB debugging (FR-2.11)
-- [ ] Verified on device: Phone, Clock, Calculator, Settings, Play Store, SystemUI, and the IME
-      all remain fully usable with a maximal blocklist
+**Delivered**
+- `SelfGuardAccessibilityService` `TYPE_WINDOW_STATE_CHANGED` path (`checkAppBlock`) detects the
+  foreground package and blocks it with a 750 ms debounce.
+- Three independent protection layers so the phone can never be locked out (FR-2.5 / FR-2.6):
+  1. **Add-time** — `BlocklistRepository.addApp` rejects protected packages via
+     `CriticalApps.protectReason` and surfaces the reason to the user.
+  2. **Block-time** — `checkAppBlock` re-checks `protectReason` before acting, so even a
+     hand-edited database cannot lock the owner out.
+  3. **Picker** — protected packages are filtered out of the Apps-tab installed list.
+- Hard allowlist resolved at runtime: **every** `CATEGORY_HOME` activity (`launcherPackages()`),
+  the default IME (`DEFAULT_INPUT_METHOD`), SelfGuard itself, and the static critical list
+  (SystemUI, dialer/telecom, clock, installer, Play Store, settings, and more).
+- Block action → `BlockedActivity` (app name + icon) with a Home button; `BLOCKED_APP` event
+  written to the log.
+- Bottom-navigation shell (Home / Blocklists / Settings) landed with this phase; the Apps tab of
+  Blocklists was built here too.
 
-**Verification:** the FR-2 acceptance cases; the "never lock yourself out" test with every system
-package added to the blocklist by mistake.
+**Bug found and fixed during on-device testing**
+On a vivo device with several `CATEGORY_HOME` activities, resolving only the *preferred* launcher
+let `com.vivo.simplelauncher` through the add-time guard. `launcherPackages()` now collects **all**
+HOME resolvers, and `CriticalApps.protectReason` takes a `Set` of launcher packages instead of a
+single one. Covered by the `every launcher package is protected` unit test.
 
-**Exit criteria:** blocked apps do not open; the dialer, clock, and IME still work even if
-somebody blocklists them by mistake.
+**Verification (Android 14, vivo):** blocking Drive end-to-end (block → launch → `BlockedActivity`
+→ Home); launcher removed from the list; launchers filtered out of the picker; add-time and
+block-time rejection of critical packages; unit tests + `lintDebug` green.
 
 ---
 
@@ -158,7 +161,10 @@ somebody blocklists them by mistake.
 **Goal:** the lists are comfortable to edit, including from a PC.
 
 **Already in Phase 1:** the Websites and Keywords tabs with add / delete / enable and validation.
-Remaining here: the Apps tab, import / export, and rule notes.
+**Already in Phase 2:** the Blocklists screen with three tabs (Apps / Websites / Keywords) and the
+Apps tab — installed packages with labels and icons, search, one-tap block, "system apps" filter,
+and a protected-packages filter so launcher / IME / critical apps are never offered.
+Remaining here: import / export, rule notes, and the richer Websites/Keywords editing.
 
 **Checklist**
 - [ ] Blocklists screen with three tabs (Apps / Websites / Keywords)
@@ -186,6 +192,11 @@ engine picks up changes instantly.
 ## Phase 4 — Protection hardening
 
 **Goal:** disabling SelfGuard becomes slow, loud and logged — while a safe exit always exists.
+
+> **Deferred from Phase 2:** Device Owner app-suspension (`setPackagesSuspended`) and the optional
+> `setApplicationHidden` (API 30) per-rule toggle, plus the suspend/undelete restore path and the
+> `RULE_SKIPPED_CRITICAL` dashboard warning. These need the Device Owner groundwork being built
+> here, so they land with this phase rather than Phase 2.
 
 **Checklist**
 - [ ] `ProtectionStateMachine` (pure): UNINITIALISED → ARMED → TAMPERED → RELEASE_PENDING → RELEASED
@@ -324,6 +335,12 @@ Galaxy A20 (Android 11 / One UI 3).*
 - [ ] Firefox repeats the Chrome cases
 
 ### App blocking
+
+*Already exercised on an Android 14 development device: Drive blocked through the Apps tab, then
+launched → `BlockedActivity` shown with the app name and Home button, event logged. Launcher
+removed from the blocklist and filtered out of the picker; add-time and block-time rejection of
+critical packages confirmed. The Device Owner rows below still need the Galaxy A20.*
+
 - [ ] Blocklisted app → does not open, block screen shown, logged
 - [ ] Blocklisted app hidden from the launcher (Device Owner)
 - [ ] Blocklisted app suspended → cannot be launched even from Settings

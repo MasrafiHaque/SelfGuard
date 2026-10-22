@@ -12,11 +12,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ListAlt
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.ListAlt
-import androidx.compose.material.icons.filled.OpenInNew
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -24,7 +23,6 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -42,9 +40,9 @@ fun DashboardScreen(
     onOpenBlocklists: () -> Unit,
 ) {
     val serviceEnabled by viewModel.serviceEnabled.collectAsStateWithLifecycle()
-    val settings by viewModel.settings.collectAsStateWithLifecycle()
     val sites by viewModel.sites.collectAsStateWithLifecycle()
     val keywords by viewModel.keywords.collectAsStateWithLifecycle()
+    val blockedApps by viewModel.blockedApps.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
     Column(
@@ -96,7 +94,7 @@ fun DashboardScreen(
                 }
                 Text(
                     text = if (serviceEnabled) {
-                        "Websites and keywords on your list are blocked in every supported browser."
+                        "Apps, websites and keywords on your list are blocked."
                     } else {
                         "Nothing is blocked until the accessibility service is turned on."
                     },
@@ -107,7 +105,7 @@ fun DashboardScreen(
                         onClick = { MainViewModel.openAccessibilitySettings(context) },
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Icon(Icons.Default.OpenInNew, contentDescription = null)
+                        Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null)
                         Spacer(Modifier.size(8.dp))
                         Text("Turn on the service")
                     }
@@ -126,7 +124,8 @@ fun DashboardScreen(
                     fontWeight = FontWeight.Bold,
                 )
                 Text(
-                    text = "${sites.size} domains and ${keywords.size} keywords",
+                    text = "${sites.size} domains, ${keywords.size} keywords and " +
+                        "${blockedApps.size} apps",
                     style = MaterialTheme.typography.bodyLarge,
                 )
                 Spacer(Modifier.height(4.dp))
@@ -134,38 +133,10 @@ fun DashboardScreen(
                     onClick = onOpenBlocklists,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Icon(Icons.Default.ListAlt, contentDescription = null)
+                    Icon(Icons.AutoMirrored.Filled.ListAlt, contentDescription = null)
                     Spacer(Modifier.size(8.dp))
                     Text("Manage blocklist")
                 }
-                OutlinedButton(
-                    onClick = { viewModel.restoreDefaults() },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Icon(Icons.Default.Refresh, contentDescription = null)
-                    Spacer(Modifier.size(8.dp))
-                    Text("Restore defaults from assets")
-                }
-            }
-        }
-
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                ToggleRow(
-                    title = "Blocking",
-                    subtitle = "Master switch for website and keyword blocking",
-                    checked = settings?.blockingEnabled ?: true,
-                    onCheckedChange = viewModel::setBlockingEnabled,
-                )
-                ToggleRow(
-                    title = "Match keywords in page text",
-                    subtitle = "Also checks the words shown on the page, not only the address bar",
-                    checked = settings?.matchKeywordsInPageText ?: true,
-                    onCheckedChange = viewModel::setMatchKeywordsInPageText,
-                )
             }
         }
 
@@ -191,24 +162,5 @@ fun DashboardScreen(
         }
 
         Spacer(Modifier.height(24.dp))
-    }
-}
-
-@Composable
-private fun ToggleRow(
-    title: String,
-    subtitle: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(text = title, style = MaterialTheme.typography.bodyLarge)
-            Text(text = subtitle, style = MaterialTheme.typography.bodySmall)
-        }
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }

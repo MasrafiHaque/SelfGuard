@@ -2,13 +2,17 @@ package com.selfguard.data.repo
 
 import androidx.room.withTransaction
 import com.selfguard.data.local.DefaultBlocklist
+import com.selfguard.data.local.db.BlockedAppDao
+import com.selfguard.data.local.db.BlockedAppEntity
 import com.selfguard.data.local.db.BlockedKeywordDao
 import com.selfguard.data.local.db.BlockedKeywordEntity
 import com.selfguard.data.local.db.BlockedSiteDao
 import com.selfguard.data.local.db.BlockedSiteEntity
 import com.selfguard.data.local.db.SelfGuardDatabase
+import com.selfguard.domain.app.ProtectionReason
 import com.selfguard.domain.match.HostNormalizer
 import com.selfguard.domain.match.RuleMatcher
+import com.selfguard.domain.model.BlockedApp
 import com.selfguard.domain.model.BlockedKeyword
 import com.selfguard.domain.model.BlockedSite
 import kotlinx.coroutines.flow.Flow
@@ -24,7 +28,9 @@ class BlocklistRepository(
     private val database: SelfGuardDatabase,
     private val siteDao: BlockedSiteDao,
     private val keywordDao: BlockedKeywordDao,
+    private val appDao: BlockedAppDao,
     private val ruleMatcher: RuleMatcher,
+    private val protectReason: (String) -> ProtectionReason?,
 ) {
 
     val sites: Flow<List<BlockedSite>> = siteDao.observeAll().map { list ->
@@ -48,6 +54,19 @@ class BlocklistRepository(
                 keyword = entity.keyword,
                 label = entity.label,
                 matchInPageText = entity.matchInPageText,
+                isEnabled = entity.isEnabled,
+                source = entity.source,
+                addedAt = entity.addedAt,
+            )
+        }
+    }
+
+    val apps: Flow<List<BlockedApp>> = appDao.observeAll().map { list ->
+        list.map { entity ->
+            BlockedApp(
+                id = entity.id,
+                packageName = entity.packageName,
+                label = entity.label,
                 isEnabled = entity.isEnabled,
                 source = entity.source,
                 addedAt = entity.addedAt,
@@ -89,6 +108,29 @@ class BlocklistRepository(
             )
         )
         return AddResult.Added
+    }
+
+    suspend fun addApp(packageName: String, label: String): AddResult {
+        val clean = packageName.trim()
+        if (clean.isEmpty()) return AddResult.Rejected("Package name is empty")
+        protectReason(clean)?.let { return AddResult.Rejected(it.userMessage(clean)) }
+        val existing = appDao.getAll()
+        if (existing.any { it.packageName == clean }) return AddResult.Duplicate
+        appDao.insert(
+            BlockedAppEntity(
+                packageName = clean,
+                label = label.trim().ifBlank { clean },
+                source = BlockedApp.SOURCE_USER,
+                addedAt = System.currentTimeMillis(),
+            )
+        )
+        return AddResult.Added
+    }
+
+    suspend fun deleteApp(id: Long) = appDao.delete(id)
+
+    suspend fun deleteAppByPackage(packageName: String) {
+        appDao.getAll().filter { it.packageName == packageName }.forEach { appDao.delete(it.id) }
     }
 
     suspend fun setSiteEnabled(id: Long, enabled: Boolean) = siteDao.setEnabled(id, enabled)

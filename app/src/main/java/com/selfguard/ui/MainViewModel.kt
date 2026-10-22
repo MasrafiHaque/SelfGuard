@@ -6,10 +6,13 @@ import android.provider.Settings
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.selfguard.SelfGuardApp
+import com.selfguard.data.local.InstalledApp
 import com.selfguard.data.repo.AddResult
+import com.selfguard.domain.model.BlockedApp
 import com.selfguard.domain.model.BlockedKeyword
 import com.selfguard.domain.model.BlockedSite
 import com.selfguard.service.accessibility.SelfGuardAccessibilityService
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -32,6 +35,32 @@ class MainViewModel(application: android.app.Application) : AndroidViewModel(app
 
     val keywords: StateFlow<List<BlockedKeyword>> = container.blocklistRepository.keywords
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val blockedApps: StateFlow<List<BlockedApp>> = container.blocklistRepository.apps
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val _installedApps = MutableStateFlow<List<InstalledApp>>(emptyList())
+    val installedApps: StateFlow<List<InstalledApp>> = _installedApps.asStateFlow()
+
+    private val _installedAppsLoaded = MutableStateFlow(false)
+    val installedAppsLoaded: StateFlow<Boolean> = _installedAppsLoaded.asStateFlow()
+
+    init {
+        viewModelScope.launch(Dispatchers.IO) {
+            _installedApps.value = container.appCatalog.loadInstalledApps()
+            _installedAppsLoaded.value = true
+        }
+    }
+
+    /** Packages that can never be blocked (launcher, IME, SelfGuard, critical system apps). */
+    val protectedPackages: StateFlow<Set<String>> = flow {
+        emit(
+            installedApps.value
+                .map { it.packageName }
+                .filter { container.protectReason(it) != null }
+                .toSet(),
+        )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
 
     val serviceEnabled: StateFlow<Boolean> = flow {
         while (true) {
@@ -85,6 +114,24 @@ class MainViewModel(application: android.app.Application) : AndroidViewModel(app
 
     fun deleteKeyword(id: Long) {
         viewModelScope.launch { container.blocklistRepository.deleteKeyword(id) }
+    }
+
+    fun toggleApp(packageName: String, label: String, blocked: Boolean) {
+        viewModelScope.launch {
+            if (blocked) {
+                _message.value = when (val result = container.blocklistRepository.addApp(packageName, label)) {
+                    is AddResult.Added -> "$label is blocked"
+                    is AddResult.Duplicate -> "$label is already blocked"
+                    is AddResult.Rejected -> result.reason
+                }
+            } else {
+                container.blocklistRepository.deleteAppByPackage(packageName)
+            }
+        }
+    }
+
+    fun deleteApp(id: Long) {
+        viewModelScope.launch { container.blocklistRepository.deleteApp(id) }
     }
 
     fun toggleSite(id: Long, enabled: Boolean) {
